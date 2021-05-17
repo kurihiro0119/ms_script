@@ -1,0 +1,39 @@
+#パラメータ設定
+$tenantId        = "<TenantID>"
+$clientID        ="<ClientID>"
+$clientSecret    = "<Secret Key>"
+$subscriptionId  = "<Subscription Id>"
+$workspaceRgName = "<Resource Group>"
+$workspacename   = "<WorkSpace Name>"
+$Query = "<Query>"
+
+#Tokenの取得
+$loginURL       = "https://login.microsoftonline.com/$tenantId/oauth2/token"
+$resource       = "https://management.azure.com/"         
+$body           = @{grant_type="client_credentials";resource=$resource;client_id=$clientId;client_secret=$clientSecret}
+$oauth          = Invoke-RestMethod -Method Post -Uri $loginURL -Body $body
+$headerParams = @{"Authorization" = "Bearer " + $oauth.access_token} 
+
+#検索クエリ
+$body = @{query = $Query}| ConvertTo-Json
+
+#APIの呼び出し(検索クエリの実行)
+$url="https://management.azure.com/subscriptions/$subscriptionId/resourceGroups/$workspaceRgName/providers/Microsoft.OperationalInsights/workspaces/$workspacename/api/query?api-version=2017-01-01-preview"
+$result = Invoke-RestMethod -UseBasicParsing -Headers $headerParams -Uri $url -Method Post -Body $body -ContentType "application/json"
+
+#検索クエリ結果の整形
+$headerRow = $null
+$headerRow = $result.tables[0].columns | Select-Object ColumnName
+$columnsCount = $headerRow.Count
+$logData = @()
+foreach ($row in $result.tables[0].rows) {
+    $data = new-object PSObject
+    for ($i = 0; $i -lt $columnsCount; $i++) {
+        $data | add-member -membertype NoteProperty -name $headerRow[$i].ColumnName -value $row[$i]
+    }
+    $logData += $data
+    $data = $null
+}
+
+#CSV出力
+$logData | export-csv LogAnalytics.csv -NoTypeInformation
